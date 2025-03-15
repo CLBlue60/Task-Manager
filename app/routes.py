@@ -1,37 +1,54 @@
 from flask import Flask, request, jsonify
-from .database import get_db_connection
-from app.database import task
+import logging
+from app.database.task import scan, select_by_id, create_task as db_create_task, update_task_by_id, delete_task_by_id
 
 app = Flask(__name__)
 
-@app.get("/")
-@app.get("/tasks")
+logging.basicConfig(level=logging.INFO)
+
+@app.route("/tasks", methods=["GET"])
 def get_tasks():
-    conn = get_db_connection()
-    cursor = conn.execute("SELECT * FROM tasks")
-    tasks = cursor.fetchall()
-    conn.close()
-    return jsonify({"tasks": [dict(task) for task in tasks]})
+    tasks = scan()
+    return jsonify({"tasks": tasks, "ok": True})
 
-@app.get("/tasks/<int:pk>")
-def get_task(pk):
-    out = {
-        "task": task.select_by_id(pk),
-        "ok": True
-    }
-    return out
+@app.route("/tasks/<int:task_id>", methods=["GET"])
+def get_task(task_id):
+    task_data = select_by_id(task_id)
+    if task_data:
+        return jsonify({"task": task_data, "ok": True})
+    return jsonify({"error": "Task not found", "ok": False}), 404
 
-app.post("/tasks")
-def create_task():
-    task.create.task(request.json)
-    return "", 204
+@app.route("/tasks", methods=["POST"])
+def create_task_route():
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided", "ok": False}), 400
 
-app.put("/tasks/<int:pk>")
-def update_task(pk):
-    task.update_task_by_id(pk, request.json)
-    return "", 204
+    try:
+        db_create_task(data)
+        return jsonify({"message": "Task created", "ok": True}), 201
+    except Exception as e:
+        logging.error(f"Error creating task: {e}")
+        return jsonify({"error": str(e), "ok": False}), 500
 
-app.delete("/tasks/<int:pk>")
-def delete_task(pk):
-    task.delete_task_by_id(pk)
-    return "", 204
+@app.route("/tasks/<int:task_id>", methods=["PUT"])
+def update_task(task_id):
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided", "ok": False}), 400
+
+    try:
+        update_task_by_id(task_id, data)
+        return jsonify({"message": "Task updated", "ok": True}), 200
+    except Exception as e:
+        logging.error(f"Error updating task {task_id}: {e}")
+        return jsonify({"error": str(e), "ok": False}), 500
+
+@app.route("/tasks/<int:task_id>", methods=["DELETE"])
+def delete_task(task_id):
+    try:
+        delete_task_by_id(task_id)
+        return jsonify({"message": "Task deleted", "ok": True}), 200
+    except Exception as e:
+        logging.error(f"Error deleting task {task_id}: {e}")
+        return jsonify({"error": str(e), "ok": False}), 500
